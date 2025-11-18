@@ -336,6 +336,55 @@
             background-color: #f8fafc; /* slate-50 */
         }
         
+        /* --- NEW: Limit Indicator Bar Graph --- */
+        .limit-indicator-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 0.75rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(4px);
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            /* Hidden by default, shown by JS */
+            display: none; 
+        }
+        .limit-label {
+            font-size: 0.75rem; /* 12px */
+            font-weight: 600;
+            color: #334155; /* slate-700 */
+            margin-bottom: 0.375rem;
+            text-align: center;
+        }
+        .limit-bar-container {
+            display: flex;
+            width: 100%;
+            height: 1.25rem; /* 20px */
+            border-radius: 0.25rem;
+            overflow: hidden;
+            background-color: #e2e8f0; /* slate-200 */
+            border: 1px solid #cbd5e1; /* slate-300 */
+        }
+        .limit-bar {
+            height: 100%;
+            transition: width 0.5s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: white;
+            overflow: hidden;
+        }
+        .limit-bar-cathode {
+            background-color: #0e7490; /* cyan-700 */
+            border-right: 1px solid #f8fafc;
+        }
+        .limit-bar-anode {
+            background-color: #c2410c; /* orange-800 */
+        }
+        /* --- End of NEW CSS --- */
+
         @media (min-width: 1024px) {
             .vis-container {
                 /* On desktop, fill 50% height */
@@ -485,8 +534,8 @@
             <div class="input-panel lg:border-r lg:border-black/5">
                 <!-- Header (Desktop Only) -->
                 <div class="hidden lg:block mb-6">
-                    <h1 class="h1-title">Cell capacity Calculator</h1>
-                    <p class="h3-subtitle">Real-time Li-ion Cell Modeler</p>
+                    <h1 class="h1-title">Neuromorphic Cell Calculator</h1>
+                    <p class="h3-subtitle">Real-time Li-ion Capacity Modeler</p>
                 </div>
                 
                 <!-- Global Inputs -->
@@ -590,11 +639,22 @@
                         <p class="text-gray-700 font-semibold">Li-Metal</p>
                     </div>
                     <div class="absolute bottom-2 right-2 p-1.5 bg-white/50 backdrop-blur-sm rounded-lg text-xs text-gray-600">
-                        Click & Drag to Rotate
-                    </div>
+                Click & Drag to Rotate
+            </div>
+            
+            <!-- === NEW: Limit Indicator Bar Graph === -->
+            <div id="limit-indicator" class="limit-indicator-overlay">
+                <p id="limit-label" class="limit-label">Limiting Electrode: -</p>
+                <div class="limit-bar-container">
+                    <div id="limit-bar-cathode" class="limit-bar limit-bar-cathode" style="width: 50%;">C</div>
+                    <div id="limit-bar-anode" class="limit-bar limit-bar-anode" style="width: 50%;">A</div>
                 </div>
-                
-                <!-- 
+            </div>
+            <!-- === END: Limit Indicator Bar Graph === -->
+            
+        </div>
+        
+        <!-- 
                   Results Wrapper:
                   - Fills the bottom 50% on desktop and scrolls
                 -->
@@ -725,6 +785,12 @@
         const clearLogBtn = document.getElementById('clear-log-btn');
         const logDisplayArea = document.getElementById('log-display-area');
 
+        // --- ✨ NEW: Limit Indicator Elements ✨ ---
+        const limitIndicator = document.getElementById('limit-indicator');
+        const limitLabel = document.getElementById('limit-label');
+        const limitBarCathode = document.getElementById('limit-bar-cathode');
+        const limitBarAnode = document.getElementById('limit-bar-anode');
+
 
         // --- Global State ---
         let currentResults = {}; // Store results for logging
@@ -733,7 +799,7 @@
         // --- Foil Mass Constants ---
         const foilMasses = {
             cathode: { baseMass: 6.5, baseArea: Math.PI * Math.pow(14 / 2, 2) },
-            anode: { baseMass: 14, baseArea: Math.PI * Math.pow(14 / 2, 2) }
+            anode: { baseMass: 13.5, baseArea: Math.PI * Math.pow(14 / 2, 2) }
         };
 
         // --- Event Listeners ---
@@ -803,6 +869,9 @@
             // Reset grid layout to default (2 cols)
             resultsGrid.classList.remove('sm:grid-cols-1');
             resultsGrid.classList.add('sm:grid-cols-2');
+            
+            // --- NEW: Hide/Show Limit Indicator ---
+            limitIndicator.style.display = 'none';
 
 
             if (cellType === 'full') {
@@ -814,6 +883,9 @@
                 anodeArealCard.style.display = 'flex';
                 cathodeAreaCard.style.display = 'flex';
                 anodeAreaCard.style.display = 'flex';
+                
+                // --- NEW: Show Limit Indicator for Full Cell ---
+                limitIndicator.style.display = 'block';
 
             } else if (cellType === 'cathode_half') {
                 // Show only cathode inputs and relevant results
@@ -835,6 +907,8 @@
             }
             
             update3DModel(0, 0, cellType);
+            // --- NEW: Reset limit indicator on toggle ---
+            updateLimitIndicator(0, 0, 'N/A', cellType);
         }
 
         function updateFoilMass(type, diameter) {
@@ -989,6 +1063,9 @@
             
             // --- Update 3D Visualization ---
             update3DModel(cathodeHeight, anodeHeight, cellType);
+            
+            // --- NEW: Update Limit Indicator ---
+            updateLimitIndicator(cathodeNominalCap, anodeNominalCap, limitingElectrode, cellType);
         }
 
         function clearResults() {
@@ -1003,6 +1080,9 @@
                  viewLogBtn.classList.add('hidden');
             }
             currentResults = {};
+            
+            // --- NEW: Reset limit indicator ---
+            updateLimitIndicator(0, 0, 'N/A', cellTypeSelect.value);
         }
 
         function showError(message) {
@@ -1012,6 +1092,44 @@
 
         function hideError() {
             errorMessage.style.display = 'none';
+        }
+
+        // --- NEW: Limit Indicator Update Function ---
+        /**
+         * Updates the 2D bar graph overlay in the 3D visualization.
+         */
+        function updateLimitIndicator(cathodeCap, anodeCap, limitingElectrode, cellType) {
+            if (cellType !== 'full' || isNaN(cathodeCap) || isNaN(anodeCap) || cathodeCap <= 0 || anodeCap <= 0) {
+                limitIndicator.style.display = 'none'; // Hide if not full-cell or invalid data
+                return;
+            }
+            
+            limitIndicator.style.display = 'block';
+
+            // 1. Update Label
+            if (limitingElectrode === 'Cathode') {
+                limitLabel.textContent = 'Cathode Limited';
+                limitLabel.style.color = '#0e7490'; // Cyan
+            } else if (limitingElectrode === 'Anode') {
+                limitLabel.textContent = 'Anode Limited';
+                limitLabel.style.color = '#c2410c'; // Orange
+            } else {
+                limitLabel.textContent = 'Limiting Electrode: -';
+                limitLabel.style.color = '#334155'; // Gray
+            }
+            
+            // 2. Update Bars
+            const maxCap = Math.max(cathodeCap, anodeCap);
+            const cathodeWidth = (cathodeCap / maxCap) * 100;
+            const anodeWidth = (anodeCap / maxCap) * 100;
+
+            // Set bar widths
+            limitBarCathode.style.width = `${cathodeWidth}%`;
+            limitBarAnode.style.width = `${anodeWidth}%`;
+            
+            // Update text (show capacity in mAh)
+            limitBarCathode.textContent = cathodeCap.toFixed(2);
+            limitBarAnode.textContent = anodeCap.toFixed(2);
         }
 
 
@@ -1317,6 +1435,3 @@
     </script>
 </body>
 </html>
-
-
-
