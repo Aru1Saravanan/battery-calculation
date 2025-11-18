@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Li-ion Cell Capacity Calculator</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- 
+      Import Map for three.js
+      This tells the browser where to find 'three' and 'three/addons/'
+    -->
+    <script type="importmap">
+    {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <!-- MERGED CSS STYLES -->
+    <style>
+        /* --- Base Styles & Font --- */
+        html {
+            /* Fluid typography: scales from 14px to 16px */
+            font-size: clamp(0.875rem, 0.825rem + 0.25vw, 1rem);
+            box-sizing: border-box; /* Ensure padding doesn't add to width */
+        }
+        
+        /* Box-sizing reset */
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light background */
+            color: #1e293b; /* Dark text */
+            overflow-x: hidden; /* FIX: Prevents aurora background from causing page overflow */
+            /* Center the main card */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem; /* Padding for mobile */
+        }
+        
+        /* Animated Aurora Background */
+        .aurora-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none; /* Allows clicking through it */
+        }
+
+        .aurora-background::before,
+        .aurora-background::after {
+            content: '';
+            position: absolute;
+            width: 80vmax;
+            height: 80vmax;
+            border-radius: 50%;
+            /* Lighter opacity for light mode */
+            opacity: 0.15;
+            filter: blur(120px); /* Increased blur */
+            will-change: transform, opacity;
+        }
+
+        /* Cyan light */
+        .aurora-background::before {
+            top: -40vmax;
+            left: -40vmax;
+            background: radial-gradient(circle, #06b6d4 0%, transparent 60%);
+            animation: moveAurora 20s infinite linear alternate;
+        }
+
+        /* Orange light */
+        .aurora-background::after {
+            bottom: -40vmax;
+            right: -40vmax;
+            background: radial-gradient(circle, #f97316 0%, transparent 60%);
+            animation: moveAurora 25s infinite linear alternate-reverse;
+        }
+
+
+        @keyframes moveAurora {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0.15;
+            }
+            50% {
+                opacity: 0.25;
+            }
+            100% {
+                transform: translate(100px, 100px) scale(1.2);
+                opacity: 0.15;
+            }
+        }
+
+        /* --- Main Card Layout --- */
+        /* This is the new centered, max-width, max-height card */
+        .app-card {
+            width: 100%;
+            max-width: 80rem; /* 1280px (max-w-7xl) */
+            height: auto; /* Natural height on mobile */
+            /* REMOVED: max-height: 90vh; */
+            
+            position: relative;
+            z-index: 10;
+            
+            display: flex; /* Use flex for mobile layout */
+            flex-direction: column;
+            
+            /* Glass Effect */
+            background: rgba(255, 255, 255, 0.7); /* Light glass */
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: 1rem; /* rounded-2xl */
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            /* REMOVED: overflow: hidden; */
+        }
+        
+        /* Grid layout for the card content */
+        .card-content {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 1fr; /* Single column on mobile */
+            /* Grow to fill the card */
+            flex-grow: 1;
+            /* REMOVED: overflow: auto; */
+        }
+        
+        /* On large screens (desktop), switch to 2-column layout */
+        @media (min-width: 1024px) {
+            .app-card {
+                /* On desktop, flex-direction is row */
+                flex-direction: row;
+                /* REMOVED: height: 90vh; */
+            }
+            .card-content {
+                /* FIX: Equal 1fr 1fr columns */
+                grid-template-columns: 1fr 1fr; 
+                grid-template-rows: 1fr; /* Single row */
+                /* REMOVED: overflow: hidden; */
+            }
+        }
+        
+        
+        /* --- Input Panel (Left) --- */
+        .input-panel {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        @media (min-width: 1024px) {
+            .input-panel {
+                /* REMOVED: border-right: 1px solid rgba(0, 0, 0, 0.05); */
+                border-bottom: 0;
+                /* REMOVED: overflow-y: auto; */
+                /* REMOVED: height: 100%; */
+            }
+        }
+ 
+        /* --- Results Panel (Right) --- */
+        .results-panel {
+            /* Flex layout to position 3D scene and results */
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            /* Default for mobile */
+            /* REMOVED: overflow-y: auto; */ 
+        }
+        
+        @media (min-width: 1024px) {
+            .results-panel {
+                overflow-y: auto; /* FIX: Make the panel scroll if content overflows */
+                height: 100%; /* FIX: Ensure panel respects card height */
+                /* Make it a flex column to split 50/50 */
+                display: flex;
+                flex-direction: column;
+                padding: 1.5rem; /* Ensure padding is consistent */
+                gap: 1.5rem; /* ADDED: This separates vis and results */
+            }
+        }
+        
+        /* --- Input Fields & Labels --- */
+        .input-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            /* Fluid font size */
+            font-size: clamp(0.8rem, 0.75rem + 0.2vw, 0.875rem);
+            font-weight: 500;
+            color: #475569; /* slate-600 */
+        }
+
+        .input-field {
+            display: block;
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid #cbd5e1; /* slate-300 */
+            background-color: rgba(255, 255, 255, 0.5); /* Transparent white */
+            color: #1e293b; /* slate-800 */
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .input-field::placeholder {
+            color: #94a3b8; /* slate-400 */
+        }
+
+        /* Light theme focus */
+        .input-field:focus {
+            outline: none;
+            border-color: #0e7490; /* cyan-700 */
+            background-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.2);
+        }
+
+        /* Remove arrows from number inputs */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] {
+          -moz-appearance: textfield;
+        }
+
+        /* --- Result Cards --- */
+        .result-card-main {
+            padding: 1rem 1.5rem;
+            border-radius: 0.75rem;
+            background-color: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 105px; /* Fix for staggered grid */
+        }
+
+        .result-card-secondary {
+            padding: 1rem;
+            border-radius: 0.75rem;
+            background-color: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            min-height: 105px; /* Fix for staggered grid */
+        }
+        
+        /* Fluid font sizes for results */
+        .result-value-main {
+            font-size: clamp(1.5rem, 1.2rem + 1vw, 2.25rem); /* 24px to 36px */
+            font-weight: 700;
+            color: #0f172a; /* slate-900 */
+        }
+        
+        .result-value-secondary {
+            font-size: clamp(1.25rem, 1rem + 0.8vw, 1.875rem); /* 20px to 30px */
+            font-weight: 700;
+            color: #0f172a; /* slate-900 */
+        }
+        
+        .result-label {
+            font-size: clamp(0.8rem, 0.75rem + 0.2vw, 0.875rem);
+            font-weight: 500;
+            color: #475569; /* slate-600 */
+            margin-bottom: 0.25rem;
+        }
+        
+        .result-label-cyan { color: #0e7490; }
+        .result-label-orange { color: #c2410c; }
+        
+        /* --- Title Headings --- */
+        .h1-title {
+            font-size: clamp(1.25rem, 1rem + 0.8vw, 1.875rem);
+            font-weight: 700;
+            color: #0f172a; /* slate-900 */
+        }
+        
+        .h2-title {
+            font-size: clamp(1.1rem, 0.95rem + 0.5vw, 1.5rem);
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        
+        .h2-title-cyan { color: #0e7490; }
+        .h2-title-orange { color: #c2410c; }
+        .h2-title-gray { color: #334155; }
+        
+        .h3-subtitle {
+            font-size: clamp(0.875rem, 0.8rem + 0.2vw, 1rem);
+            color: #0e7490; /* cyan-700 */
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Input Group Box */
+        .input-group {
+            padding: 1rem;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* 3D Vis Container */
+        .vis-container {
+            width: 100%;
+            /* Responsive square on mobile */
+            aspect-ratio: 1 / 1; 
+            position: relative;
+            margin-bottom: 1.5rem;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            /* FIX: Light background for 3D vis */
+            background-color: #f8fafc; /* slate-50 */
+        }
+        
+        @media (min-width: 1024px) {
+            .vis-container {
+                /* On desktop, fill 50% height */
+                /* REMOVED: height: 50%; */
+                min-height: 300px; /* Ensure it's not too small */
+                /* REMOVED: flex-grow: 0; */
+                flex-shrink: 0; /* FIX: Prevent container from shrinking */
+                /* Reset aspect-ratio */
+                aspect-ratio: auto; /* FIX: Disable 1/1 aspect ratio on desktop */
+                height: 300px; /* FIX: Set a fixed height */
+            }
+        }
+        
+        /* Results Grid Wrapper */
+        .results-grid-wrapper {
+            width: 100%;
+            /* Mobile default */
+            /* REMOVED: flex-shrink: 0; */
+        }
+        
+        @media (min-width: 1024px) {
+            .results-grid-wrapper {
+                /* On desktop, fill 50% height and scroll */
+                /* REMOVED: height: 50%; */
+                overflow-y: auto; /* FIX: Make the results grid scroll independently */
+                flex-grow: 1; /* FIX: Make it fill remaining space */
+                /* Add padding to the top for separation */
+                /* REMOVED: padding-top: 1.5rem; */
+                /* Small negative margin to pull it up */
+                /* REMOVED: margin-top: -1.5rem; */
+            }
+        }
+ 
+        /* REMOVED DUPLICATE STYLES */
+
+        /* --- Gemini Summary Modal --- */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background-color: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .modal-content {
+            position: relative;
+            width: 100%;
+            max-width: 2xl; /* 42rem */
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: 1rem;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            padding: 1.5rem;
+        }
+
+        .modal-output-wrapper {
+            position: relative;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .modal-textarea {
+            width: 100%;
+            height: 200px; /* Fixed height */
+            padding: 0.75rem;
+            padding-right: 3.5rem; /* Space for copy button */
+            border-radius: 0.5rem;
+            border: 1px solid #cbd5e1; /* slate-300 */
+            background-color: rgba(255, 255, 255, 0.7);
+            color: #1e293b;
+            font-family: monospace;
+            font-size: 0.875rem;
+            resize: none;
+        }
+        .modal-textarea:focus {
+            outline: none;
+            border-color: #0e7490;
+            box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.2);
+        }
+
+        .modal-copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            background-color: #f1f5f9; /* slate-100 */
+            color: #475569; /* slate-600 */
+            transition: all 0.2s;
+        }
+        .modal-copy-btn:hover {
+            background-color: #e2e8f0; /* slate-200 */
+            color: #1e293b; /* slate-800 */
+        }
+        .modal-copy-btn:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.2);
+        }
+
+        /* Loading Spinner */
+        .loading-spinner {
+            width: 2.5rem; /* w-10 */
+            height: 2.5rem; /* h-10 */
+            border: 4px solid #e0f7fa; /* cyan-50 */
+            border-top-color: #06b6d4; /* cyan-500 */
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto; /* Center it */
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body class="text-gray-800">
+    
+    <!-- Animated "Liquid Glass" Aurora Background -->
+    <div class="aurora-background"></div>
+
+    <!-- 
+      New App Card Layout:
+      - Centered on page
+      - max-w-7xl (prevents wide-screen stretch)
+      - max-h-90vh (prevents tall-screen stretch)
+      - Scrolls internally
+    -->
+    <div class="app-card shadow-2xl rounded-2xl">
+        
+        <!-- 
+          Card Content Grid:
+          - lg:grid-cols-2 (Splits panels on desktop)
+          - lg:overflow-hidden (Prevents card from scrolling on desktop)
+        -->
+        <div class="card-content lg:grid">
+
+            <!-- 
+              Input Panel (Left):
+              - lg:overflow-y-auto (Enables *independent* scrolling on desktop)
+            -->
+            <div class="input-panel lg:border-r lg:border-black/5">
+                <!-- Header (Desktop Only) -->
+                <div class="hidden lg:block mb-6">
+                    <h1 class="h1-title">Neuromorphic Cell Calculator</h1>
+                    <p class="h3-subtitle">Real-time Li-ion Capacity Modeler</p>
+                </div>
+                
+                <!-- Global Inputs -->
+                <div class="mb-4">
+                    <label for="cellType" class="input-label">Cell Type</label>
+                    <select id="cellType" class="input-field">
+                        <option value="full">Full-Cell (Anode vs Cathode)</option>
+                        <option value="cathode_half">Cathode Half-Cell (vs. Li-Metal)</option>
+                        <option value="anode_half">Anode Half-Cell (vs. Li-Metal)</option>
+                    </select>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" class="hidden p-3 mb-4 text-sm text-red-700 bg-red-100 border border-red-300 rounded-lg">
+                    Error placeholder
+                </div>
+
+                <!-- Cathode Inputs -->
+                <div id="cathode-inputs" class="input-group border-cyan-200">
+                    <h2 class="h2-title h2-title-cyan">Cathode Inputs</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="cathodeDiameter" class="input-label">Cathode Diameter (mm)</label>
+                            <select id="cathodeDiameter" class="input-field">
+                                <option value="12">12 mm</option>
+                                <option value="14">14 mm</option>
+                                <option value="15" selected>15 mm</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="cathodeFoilMass" class="input-label">Empty Foil Mass (mg)</label>
+                            <input type="number" id="cathodeFoilMass" class="input-field" placeholder="e.g., 6.5" readonly>
+                        </div>
+                        <div>
+                            <label for="cathodeTotalMass" class="input-label">Total Electrode Mass (mg)</label>
+                            <input type="number" id="cathodeTotalMass" class="input-field" placeholder="e.g., 10.2">
+                        </div>
+                        <div>
+                            <label for="cathodeActivePercent" class="input-label">Active Material (%)</label>
+                            <input type="number" id="cathodeActivePercent" class="input-field" placeholder="e.g., 90">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label for="cathodeSpecificCapacity" class="input-label">Specific Capacity (mAh/g)</label>
+                            <input type="number" id="cathodeSpecificCapacity" class="input-field" placeholder="e.g., 160">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Anode Inputs -->
+                <div id="anode-inputs" class="input-group border-orange-200">
+                    <h2 class="h2-title h2-title-orange">Anode Inputs</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="anodeDiameter" class="input-label">Anode Diameter (mm)</label>
+                            <select id="anodeDiameter" class="input-field">
+                                <option value="12">12 mm</option>
+                                <option value="14">14 mm</option>
+                                <option value="15" selected>15 mm</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="anodeFoilMass" class="input-label">Empty Foil Mass (mg)</label>
+                            <input type="number" id="anodeFoilMass" class="input-field" placeholder="e.g., 13.5" readonly>
+                        </div>
+                        <div>
+                            <label for="anodeTotalMass" class="input-label">Total Electrode Mass (mg)</label>
+                            <input type="number" id="anodeTotalMass" class="input-field" placeholder="e.g., 15.8">
+                        </div>
+                        <div>
+                            <label for="anodeActivePercent" class="input-label">Active Material (%)</label>
+                            <input type="number" id="anodeActivePercent" class="input-field" placeholder="e.g., 92">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label for="anodeSpecificCapacity" class="input-label">Specific Capacity (mAh/g)</label>
+                            <input type="number" id="anodeSpecificCapacity" class="input-field" placeholder="e.g., 350">
+                        </div>
+                    </div>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-4">
+                    <strong>Note:</strong> Foil Mass is auto-calculated. Total Electrode Mass is the full punched electrode. Active Material % is the weight % in your slurry.
+                </p>
+            </div>
+
+            <!-- 
+              Results Panel (Right):
+              - lg:overflow-y-auto (Enables *independent* scrolling on desktop)
+              - lg:flex lg:flex-col (New structure for 50/50 split)
+            -->
+            <div class="results-panel lg:flex lg:flex-col lg:overflow-hidden">
+                
+                <!-- 3D Visualization -->
+                <div class="vis-container">
+                    <!-- This div is the target for three.js resizing -->
+                    <div class="absolute inset-0">
+                        <canvas id="webgl-vis" style="width: 100%; height: 100%; display: block;"></canvas>
+                    </div>
+                    <div class="absolute top-2 left-2 p-2 bg-white/50 backdrop-blur-sm rounded-lg text-xs">
+                        <p class="text-cyan-700 font-semibold">Cathode</p>
+                        <p class="text-orange-700 font-semibold">Anode</p>
+                        <p class="text-gray-700 font-semibold">Li-Metal</p>
+                    </div>
+                    <div class="absolute bottom-2 right-2 p-1.5 bg-white/50 backdrop-blur-sm rounded-lg text-xs text-gray-600">
+                        Click & Drag to Rotate
+                    </div>
+                </div>
+                
+                <!-- 
+                  Results Wrapper:
+                  - Fills the bottom 50% on desktop and scrolls
+                -->
+                <div class="results-grid-wrapper">
+                    <!-- Header (Mobile Only) -->
+                    <h2 class="h2-title h2-title-gray lg:hidden">Calculated Results</h2>
+                    
+                    <div id="results-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <!-- Main Result -->
+                        <div class="result-card-main sm:col-span-2">
+                            <span class="result-label">Nominal Capacity</span>
+                            <span id="nominal-capacity-val" class="result-value-main">- mAh</span>
+                        </div>
+
+                        <!-- === FIX: RE-ADDED MISSING CARDS === -->
+                        <div id="np-ratio-card" class="result-card-secondary">
+                            <span class="result-label">N/P Ratio</span>
+                            <span id="np-ratio-val" class="result-value-secondary">-</span>
+                        </div>
+                        <div id="cathode-areal-card" class="result-card-secondary">
+                            <span class="result-label result-label-cyan">Cathode Areal (mAh/cm²)</span>
+                            <span id="cathode-areal-cap-val" class="result-value-secondary">-</span>
+                        </div>
+                        <div id="cathode-area-card" class="result-card-secondary">
+                            <span class="result-label result-label-cyan">Cathode Area (cm²)</span>
+                            <span id="cathode-area-val" class="result-value-secondary">-</span>
+                        </div>
+                        <div id="anode-areal-card" class="result-card-secondary">
+                            <span class="result-label result-label-orange">Anode Areal (mAh/cm²)</span>
+                            <span id="anode-areal-cap-val" class="result-value-secondary">-</span>
+                        </div>
+                         <div id="anode-area-card" class="result-card-secondary">
+                            <span class="result-label result-label-orange">Anode Area (cm²)</span>
+                            <span id="anode-area-val" class="result-value-secondary">-</span>
+                        </div>
+                        <!-- === END OF FIX === -->
+                    </div>
+
+                    <!-- ✨ SESSION LOG FEATURE (Moved outside grid) ✨ -->
+                    <button id="view-log-btn" class="hidden mt-6 w-full text-center px-5 py-3 rounded-lg font-semibold text-base
+                        bg-gradient-to-r from-gray-500 to-gray-600 text-white
+                        hover:from-gray-600 hover:to-gray-700
+                        focus:outline-none focus:ring-4 focus:ring-gray-300
+                        transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl
+                        disabled:opacity-50 disabled:cursor-not-allowed">
+                        View Session Log
+                    </button>
+                    <!-- End Session Log Feature -->
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✨ SESSION LOG MODAL ✨ -->
+    <div id="log-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="h2-title h2-title-gray !mb-0">Session Experiment Log</h3>
+                <button id="close-log-modal-btn" class="text-gray-400 hover:text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Log Display Area -->
+            <div id="log-display-area" class="w-full max-h-96 overflow-y-auto p-2 bg-gray-100/50 rounded-lg border border-gray-200">
+                <!-- Logs will be injected here by JavaScript -->
+                <p class="text-gray-500 text-center p-4">No calculations logged in this session.</p>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="mt-4 text-right">
+                <button id="clear-log-btn" class="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2">
+                    Clear Log
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- End Modal -->
+
+
+    <!-- MERGED JAVASCRIPT -->
+    <script type="module">
+        // Import three.js modules using the import map
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Global DOM Elements ---
+        const cellTypeSelect = document.getElementById('cellType');
+        
+        // Input Sections
+        const cathodeInputs = document.getElementById('cathode-inputs');
+        const anodeInputs = document.getElementById('anode-inputs');
+        
+        // Input Fields
+        const cathodeDiameter = document.getElementById('cathodeDiameter');
+        const anodeDiameter = document.getElementById('anodeDiameter');
+        const errorMessage = document.getElementById('error-message');
+        const cathodeFoilMassInput = document.getElementById('cathodeFoilMass');
+        const anodeFoilMassInput = document.getElementById('anodeFoilMass');
+        const cathodeTotalMassInput = document.getElementById('cathodeTotalMass');
+        const cathodeActivePercentInput = document.getElementById('cathodeActivePercent');
+        const cathodeSpecificCapacityInput = document.getElementById('cathodeSpecificCapacity');
+        const anodeTotalMassInput = document.getElementById('anodeTotalMass');
+        const anodeActivePercentInput = document.getElementById('anodeActivePercent');
+        const anodeSpecificCapacityInput = document.getElementById('anodeSpecificCapacity');
+
+        // Result Cards
+        const nominalCapacityVal = document.getElementById('nominal-capacity-val');
+        const npRatioVal = document.getElementById('np-ratio-val');
+        const npRatioCard = document.getElementById('np-ratio-card');
+        const cathodeAreaVal = document.getElementById('cathode-area-val');
+        const cathodeAreaCard = document.getElementById('cathode-area-card');
+        const anodeAreaVal = document.getElementById('anode-area-val');
+        const anodeAreaCard = document.getElementById('anode-area-card');
+        const cathodeArealCapVal = document.getElementById('cathode-areal-cap-val');
+        const cathodeArealCard = document.getElementById('cathode-areal-card');
+        const anodeArealCapVal = document.getElementById('anode-areal-cap-val');
+        const anodeArealCard = document.getElementById('anode-areal-card');
+        const resultsGrid = document.getElementById('results-grid');
+
+        // --- ✨ SESSION LOG FEATURE ELEMENTS ✨ ---
+        const viewLogBtn = document.getElementById('view-log-btn');
+        const logModal = document.getElementById('log-modal');
+        const closeLogModalBtn = document.getElementById('close-log-modal-btn');
+        const clearLogBtn = document.getElementById('clear-log-btn');
+        const logDisplayArea = document.getElementById('log-display-area');
+
+
+        // --- Global State ---
+        let currentResults = {}; // Store results for logging
+        let sessionLogs = []; // In-memory store for session logs
+
+        // --- Foil Mass Constants ---
+        const foilMasses = {
+            cathode: { baseMass: 6.5, baseArea: Math.PI * Math.pow(14 / 2, 2) },
+            anode: { baseMass: 13.5, baseArea: Math.PI * Math.pow(14 / 2, 2) }
+        };
+
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', () => {
+            init3D();
+            
+            // --- ✨ SESSION LOG ✨ ---
+            loadLogsFromSession(); // Load logs on page start
+
+            toggleCellType();
+            updateFoilMass('cathode', cathodeDiameter.value);
+            updateFoilMass('anode', anodeDiameter.value);
+            
+            cellTypeSelect.addEventListener('change', () => {
+                toggleCellType();
+                calculate(); 
+            });
+            cathodeDiameter.addEventListener('change', () => {
+                updateFoilMass('cathode', cathodeDiameter.value);
+                calculate(); 
+            });
+            anodeDiameter.addEventListener('change', () => {
+                updateFoilMass('anode', anodeDiameter.value);
+                calculate();
+            });
+
+            const inputsToWatch = [
+                cathodeTotalMassInput, cathodeFoilMassInput, cathodeActivePercentInput, cathodeSpecificCapacityInput,
+                anodeTotalMassInput, anodeFoilMassInput, anodeActivePercentInput, anodeSpecificCapacityInput
+            ];
+
+            inputsToWatch.forEach(input => {
+                if (input) {
+                    input.addEventListener('input', calculate);
+                }
+            });
+
+            // --- ✨ SESSION LOG LISTENERS ✨ ---
+            viewLogBtn.addEventListener('click', showLogModal);
+            closeLogModalBtn.addEventListener('click', () => logModal.classList.add('hidden'));
+            clearLogBtn.addEventListener('click', clearLogs);
+            
+            // Close modal on backdrop click
+            logModal.addEventListener('click', (e) => {
+                if (e.target === logModal) {
+                    logModal.classList.add('hidden');
+                }
+            });
+
+            calculate();
+        });
+
+        // --- Core Functions ---
+
+        function toggleCellType() {
+            const cellType = cellTypeSelect.value;
+            
+            // Hide everything by default
+            cathodeInputs.style.display = 'none';
+            anodeInputs.style.display = 'none';
+            npRatioCard.style.display = 'none';
+            cathodeArealCard.style.display = 'none';
+            anodeArealCard.style.display = 'none';
+            cathodeAreaCard.style.display = 'none';
+            anodeAreaCard.style.display = 'none';
+            
+            // Reset grid layout to default (2 cols)
+            resultsGrid.classList.remove('sm:grid-cols-1');
+            resultsGrid.classList.add('sm:grid-cols-2');
+
+
+            if (cellType === 'full') {
+                // Show all inputs and results
+                cathodeInputs.style.display = 'block';
+                anodeInputs.style.display = 'block';
+                npRatioCard.style.display = 'flex';
+                cathodeArealCard.style.display = 'flex';
+                anodeArealCard.style.display = 'flex';
+                cathodeAreaCard.style.display = 'flex';
+                anodeAreaCard.style.display = 'flex';
+
+            } else if (cellType === 'cathode_half') {
+                // Show only cathode inputs and relevant results
+                cathodeInputs.style.display = 'block';
+                cathodeArealCard.style.display = 'flex';
+                cathodeAreaCard.style.display = 'flex';
+                // Adjust grid to be 1 column for 2 items
+                resultsGrid.classList.remove('sm:grid-cols-2');
+                resultsGrid.classList.add('sm:grid-cols-1');
+
+            } else if (cellType === 'anode_half') {
+                // Show only anode inputs and relevant results
+                anodeInputs.style.display = 'block';
+                anodeArealCard.style.display = 'flex';
+                anodeAreaCard.style.display = 'flex';
+                // Adjust grid to be 1 column for 2 items
+                resultsGrid.classList.remove('sm:grid-cols-2');
+                resultsGrid.classList.add('sm:grid-cols-1');
+            }
+            
+            update3DModel(0, 0, cellType);
+        }
+
+        function updateFoilMass(type, diameter) {
+            const d = parseFloat(diameter);
+            if (isNaN(d)) return;
+
+            const foil = foilMasses[type];
+            const newArea = Math.PI * Math.pow(d / 2, 2);
+            const newMass = (newArea / foil.baseArea) * foil.baseMass;
+            
+            const inputField = (type === 'cathode') ? cathodeFoilMassInput : anodeFoilMassInput;
+            inputField.value = newMass.toFixed(2);
+        }
+
+        function calculate() {
+            // Clear previous errors
+            hideError();
+            
+            // Get Input Values
+            const cellType = cellTypeSelect.value;
+            
+            // Cathode Inputs
+            const cathodeDiameterVal = parseFloat(cathodeDiameter.value);
+            const cathodeTotalMass = parseFloat(cathodeTotalMassInput.value);
+            const cathodeFoilMass = parseFloat(cathodeFoilMassInput.value);
+            const cathodeActivePercent = parseFloat(cathodeActivePercentInput.value);
+            const cathodeSpecificCapacity = parseFloat(cathodeSpecificCapacityInput.value);
+            
+            // Anode Inputs
+            const anodeDiameterVal = parseFloat(anodeDiameter.value);
+            const anodeTotalMass = parseFloat(anodeTotalMassInput.value);
+            const anodeFoilMass = parseFloat(anodeFoilMassInput.value);
+            const anodeActivePercent = parseFloat(anodeActivePercentInput.value);
+            const anodeSpecificCapacity = parseFloat(anodeSpecificCapacityInput.value);
+
+            // --- Initialize variables ---
+            let finalNominalCap = NaN;
+            let cathodeArealCap = NaN;
+            let cathodeArea_cm2 = NaN;
+            let anodeArealCap = NaN;
+            let anodeArea_cm2 = NaN;
+            let npRatio = NaN;
+            let cathodeHeight = 0;
+            let anodeHeight = 0;
+            let cathodeNominalCap = NaN;
+            let anodeNominalCap = NaN;
+            let cathodeActiveMass_mg = NaN;
+            let anodeActiveMass_mg = NaN;
+            let limitingElectrode = 'N/A';
+
+            // --- Cathode Calculations ---
+            if (cellType === 'full' || cellType === 'cathode_half') {
+                const cathodeSlurryMass = cathodeTotalMass - cathodeFoilMass;
+                if (cathodeTotalMass > 0 && cathodeFoilMass > 0 && cathodeSlurryMass <= 0) {
+                    showError("Cathode Total Mass must be greater than Foil Mass.");
+                    clearResults();
+                    update3DModel(0, 0, cellType);
+                    return;
+                }
+                cathodeActiveMass_mg = cathodeSlurryMass * (cathodeActivePercent / 100);
+                const cathodeActiveMass_g = cathodeActiveMass_mg / 1000;
+                cathodeArea_cm2 = Math.PI * Math.pow(cathodeDiameterVal / 10 / 2, 2);
+                cathodeNominalCap = cathodeActiveMass_g * cathodeSpecificCapacity;
+                cathodeArealCap = cathodeNominalCap / cathodeArea_cm2;
+
+                if (cellType === 'cathode_half') {
+                    finalNominalCap = cathodeNominalCap;
+                    limitingElectrode = 'Cathode (vs. Li-Metal)';
+                    if (cathodeNominalCap > 0 && !isNaN(cathodeNominalCap)) {
+                        cathodeHeight = 1; // Show full cathode capacity
+                        anodeHeight = 1; // Li metal is "infinite"
+                    }
+                }
+            }
+
+            // --- Anode Calculations ---
+             if (cellType === 'full' || cellType === 'anode_half') {
+                const anodeSlurryMass = anodeTotalMass - anodeFoilMass;
+                if (anodeTotalMass > 0 && anodeFoilMass > 0 && anodeSlurryMass <= 0) {
+                    showError("Anode Total Mass must be greater than Foil Mass.");
+                    clearResults();
+                    update3DModel(0, 0, cellType);
+                    return;
+                }
+                anodeActiveMass_mg = anodeSlurryMass * (anodeActivePercent / 100);
+                const anodeActiveMass_g = anodeActiveMass_mg / 1000;
+                anodeArea_cm2 = Math.PI * Math.pow(anodeDiameterVal / 10 / 2, 2);
+                anodeNominalCap = anodeActiveMass_g * anodeSpecificCapacity;
+                anodeArealCap = anodeNominalCap / anodeArea_cm2;
+                
+                if (cellType === 'anode_half') {
+                    finalNominalCap = anodeNominalCap;
+                    limitingElectrode = 'Anode (vs. Li-Metal)';
+                    if (anodeNominalCap > 0 && !isNaN(anodeNominalCap)) {
+                        cathodeHeight = 1; // Li metal is "infinite"
+                        anodeHeight = 1; // Show full anode capacity
+                    }
+                }
+            }
+            
+            // --- Full-Cell Final Calculations ---
+            if (cellType === 'full') {
+                // N/P Ratio (Anode Areal / Cathode Areal)
+                npRatio = anodeArealCap / cathodeArealCap;
+                
+                // Final capacity is limited by the smaller of the two
+                finalNominalCap = Math.min(cathodeNominalCap, anodeNominalCap);
+                limitingElectrode = (cathodeNominalCap < anodeNominalCap) ? 'Cathode' : 'Anode';
+
+                // --- 3D Model Heights (Full-Cell) ---
+                const maxCap = Math.max(cathodeNominalCap, anodeNominalCap);
+                if (maxCap > 0 && !isNaN(maxCap)) {
+                    cathodeHeight = (cathodeNominalCap / maxCap);
+                    anodeHeight = (anodeNominalCap / maxCap);
+                }
+            }
+
+            // --- Update Results UI (with NaN checks to prevent errors) ---
+            const hasValidCap = !isNaN(finalNominalCap) && finalNominalCap > 0;
+            nominalCapacityVal.textContent = hasValidCap ? `${finalNominalCap.toFixed(3)} mAh` : "- mAh";
+            cathodeAreaVal.textContent = isNaN(cathodeArea_cm2) ? "-" : `${cathodeArea_cm2.toFixed(2)}`;
+            cathodeArealCapVal.textContent = isNaN(cathodeArealCap) ? "-" : `${cathodeArealCap.toFixed(2)} mAh/cm²`;
+            npRatioVal.textContent = isNaN(npRatio) ? "-" : `${npRatio.toFixed(2)}`;
+            anodeAreaVal.textContent = isNaN(anodeArea_cm2) ? "-" : `${anodeArea_cm2.toFixed(2)}`;
+            anodeArealCapVal.textContent = isNaN(anodeArealCap) ? "-" : `${anodeArealCap.toFixed(2)} mAh/cm²`;
+
+            // --- Store results for logging ---
+            currentResults = {
+                cellType: cellType,
+                finalNominalCap: finalNominalCap,
+                cathodeArealCap: cathodeArealCap,
+                anodeArealCap: anodeArealCap,
+                npRatio: npRatio,
+                cathodeSpecificCapacity: cathodeSpecificCapacity || 'N/A',
+                anodeSpecificCapacity: anodeSpecificCapacity || 'N/A',
+                cathodeActiveMass_mg: cathodeActiveMass_mg,
+                anodeActiveMass_mg: anodeActiveMass_mg,
+                limitingElectrode: limitingElectrode
+            };
+
+            // --- Show/Hide Log Button & Add Log Entry ---
+            if (hasValidCap) {
+                viewLogBtn.classList.remove('hidden');
+                // Only add a new log if the capacity is valid
+                addLogEntry(currentResults); 
+            } else {
+                // Don't hide the button if logs already exist
+                if (sessionLogs.length === 0) {
+                    viewLogBtn.classList.add('hidden');
+                }
+            }
+            
+            // --- Update 3D Visualization ---
+            update3DModel(cathodeHeight, anodeHeight, cellType);
+        }
+
+        function clearResults() {
+            nominalCapacityVal.textContent = "- mAh";
+            cathodeAreaVal.textContent = "-";
+            cathodeArealCapVal.textContent = "-";
+            anodeAreaVal.textContent = "-";
+            anodeArealCapVal.textContent = "-";
+            npRatioVal.textContent = "-";
+            // Don't hide the log button if logs exist
+            if (sessionLogs.length === 0) {
+                 viewLogBtn.classList.add('hidden');
+            }
+            currentResults = {};
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+
+
+        // --- ✨ SESSION LOG FUNCTIONS ✨ ---
+
+        /**
+         * Loads logs from sessionStorage into the global array.
+         */
+        function loadLogsFromSession() {
+            const logs = sessionStorage.getItem('li-ion-session-logs');
+            if (logs) {
+                sessionLogs = JSON.parse(logs);
+                if (sessionLogs.length > 0) {
+                    viewLogBtn.classList.remove('hidden');
+                }
+            }
+        }
+
+        /**
+         * Saves the global log array to sessionStorage.
+         */
+        function saveLogsToSession() {
+            sessionStorage.setItem('li-ion-session-logs', JSON.stringify(sessionLogs));
+        }
+
+        /**
+         * Adds a new log entry, but only if it's a valid calculation.
+         */
+        function addLogEntry(results) {
+            // Check for valid capacity
+            if (!results || isNaN(results.finalNominalCap) || results.finalNominalCap <= 0) {
+                return;
+            }
+            
+            // Check if this is the *exact same* log as the last one
+            if (sessionLogs.length > 0) {
+                const lastLog = sessionLogs[0];
+                // Simple check: if capacity is the same, assume it's a duplicate (prevents log spam on input change)
+                if (lastLog.finalNominalCap === results.finalNominalCap) {
+                    // More complex check could compare all fields if needed
+                    // For now, this is good enough.
+                    return; 
+                }
+            }
+
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = { ...results, timestamp };
+            
+            sessionLogs.unshift(logEntry); // Add to the beginning (newest first)
+            saveLogsToSession();
+        }
+
+        /**
+         * Renders the logs into the modal.
+         */
+        function renderLogs() {
+            if (sessionLogs.length === 0) {
+                logDisplayArea.innerHTML = '<p class="text-gray-500 text-center p-4">No calculations logged in this session.</p>';
+                return;
+            }
+
+            logDisplayArea.innerHTML = sessionLogs.map(log => {
+                let details = '';
+                if (log.cellType === 'full') {
+                    details = `
+                        <p class="text-xs"><strong>N/P Ratio:</strong> ${log.npRatio.toFixed(2)}</p>
+                        <p class="text-xs"><strong>Cathode Areal:</strong> ${log.cathodeArealCap.toFixed(2)} mAh/cm²</p>
+                        <p class="text-xs"><strong>Anode Areal:</strong> ${log.anodeArealCap.toFixed(2)} mAh/cm²</p>
+                    `;
+                } else if (log.cellType === 'cathode_half') {
+                    details = `<p class="text-xs"><strong>Cathode Areal:</strong> ${log.cathodeArealCap.toFixed(2)} mAh/cm²</p>`;
+                } else if (log.cellType === 'anode_half') {
+                    details = `<p class="text-xs"><strong>Anode Areal:</strong> ${log.anodeArealCap.toFixed(2)} mAh/cm²</p>`;
+                }
+
+                return `
+                    <div class="p-3 border rounded-lg mb-3 bg-white/70 shadow-sm">
+                        <p class="font-semibold text-sm mb-1 text-gray-800">Log @ ${log.timestamp}</p>
+                        <div class="grid grid-cols-2 gap-x-2">
+                            <div>
+                                <p class="text-xs"><strong>Type:</strong> ${log.cellType}</p>
+                                <p class="text-xs"><strong>Capacity:</strong> ${log.finalNominalCap.toFixed(3)} mAh</p>
+                            </div>
+                            <div class="border-l pl-2 border-gray-200">
+                                ${details}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        /**
+         * Shows the log modal and renders the current logs.
+         */
+        function showLogModal() {
+            renderLogs();
+            logModal.classList.remove('hidden');
+        }
+        
+        /**
+         * Clears logs from memory and sessionStorage, then updates the view.
+         */
+        function clearLogs() {
+            sessionLogs = [];
+            sessionStorage.removeItem('li-ion-session-logs');
+            renderLogs(); // Re-render to show the "empty" message
+            logModal.classList.add('hidden'); // Close modal after clearing
+            viewLogBtn.classList.add('hidden'); // Hide button since there are no logs
+        }
+
+
+        // --- 3D Visualization (three.js) ---
+        let scene, camera, renderer, controls;
+        let cathodeMesh, anodeMesh, separatorMesh;
+        let cathodeCollector, anodeCollector;
+        let liMetal;
+        let liMetalGeom; // Make geometry accessible for update
+
+        function init3D() {
+            const visCanvas = document.getElementById('webgl-vis');
+            // FIX: Target the correct resizing container
+            const container = visCanvas.parentElement; 
+
+            scene = new THREE.Scene();
+            
+            // FIX: Set a default aspect ratio to prevent NaN
+            camera = new THREE.PerspectiveCamera(50, 1.0, 0.1, 1000);
+            camera.position.set(0, 3, 10);
+
+            // Make renderer transparent to see aurora
+            renderer = new THREE.WebGLRenderer({ canvas: visCanvas, antialias: true, alpha: true });
+            renderer.setClearAlpha(0); // Explicitly set clear alpha
+            renderer.setPixelRatio(window.devicePixelRatio);
+            
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enableZoom = false;
+            controls.enablePan = false;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+            // Materials - Updated for Light Theme
+            const cathodeMat = new THREE.MeshStandardMaterial({ 
+                color: 0x0891b2, /* Deeper cyan */ 
+                roughness: 0.3, 
+                metalness: 0.2 
+            });
+            const anodeMat = new THREE.MeshStandardMaterial({ 
+                color: 0xea580c, /* Deeper orange */ 
+                roughness: 0.3, 
+                metalness: 0.2 
+            });
+            const separatorMat = new THREE.MeshStandardMaterial({ 
+                color: 0xe2e8f0, /* Lighter gray (slate-200) */ 
+                roughness: 0.8, 
+                metalness: 0, 
+                opacity: 0.5, /* More opaque */ 
+                transparent: true 
+            });
+            const alFoilMat = new THREE.MeshStandardMaterial({ 
+                color: 0x94a3b8, /* Darker silver */ 
+                roughness: 0.1, 
+                metalness: 0.9 
+            });
+            const cuFoilMat = new THREE.MeshStandardMaterial({ 
+                color: 0xb45309, /* Darker copper */ 
+                roughness: 0.1, 
+                metalness: 0.9 
+            });
+            const liMetalMat = new THREE.MeshStandardMaterial({ 
+                color: 0xafc8dd, /* Silvery Blue Metallic */ 
+                roughness: 0.2, 
+                metalness: 0.8 
+            });
+
+
+            // Geometries
+            const electrodeGeom = new THREE.CylinderGeometry(2, 2, 1, 32);
+            const collectorGeom = new THREE.CylinderGeometry(2.1, 2.1, 0.2, 32);
+            const separatorGeom = new THREE.CylinderGeometry(2.1, 2.1, 0.1, 32);
+            // Reduced Li-metal thickness (0.75 vs 3.0 previously)
+            liMetalGeom = new THREE.CylinderGeometry(2.1, 2.1, 0.75, 32); 
+
+            // Create Meshes
+            cathodeCollector = new THREE.Mesh(collectorGeom, alFoilMat);
+            cathodeMesh = new THREE.Mesh(electrodeGeom, cathodeMat);
+            anodeCollector = new THREE.Mesh(collectorGeom, cuFoilMat);
+            anodeMesh = new THREE.Mesh(electrodeGeom, anodeMat);
+            liMetal = new THREE.Mesh(liMetalGeom, liMetalMat);
+            separatorMesh = new THREE.Mesh(separatorGeom, separatorMat);
+
+            scene.add(cathodeMesh, cathodeCollector, anodeMesh, anodeCollector, separatorMesh, liMetal);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(5, 10, 7.5);
+            scene.add(dirLight);
+
+            // Handle Resize
+            function onResize() {
+                // Read from the correct container
+                const w = container.clientWidth;
+                const h = container.clientHeight;
+                if (w > 0 && h > 0) {
+                    camera.aspect = w / h;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(w, h);
+                }
+            }
+            
+            // Use ResizeObserver for more robust resizing
+            const resizeObserver = new ResizeObserver(() => {
+                onResize();
+            });
+            resizeObserver.observe(container);
+            
+            // Initial size set
+            onResize(); 
+
+            animate3D();
+        }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function update3DModel(cathodeHeight, anodeHeight, cellType) {
+            const maxHeight = 1.0; // REDUCED: Was 2.0
+            // UPDATED: Use linear scaling instead of sqrt
+            const scale = (h) => Math.max(0, h) * maxHeight; 
+            
+            const scaledCathodeHeight = scale(cathodeHeight);
+            const scaledAnodeHeight = scale(anodeHeight);
+            
+            // Li metal visual thickness
+            const liMetalVisualHeight = 0.75; // Matches geometry
+            const liMetalVisualY = (liMetalVisualHeight / 2) + 0.05; // Positioned near separator
+
+            // Default hide all
+            liMetal.visible = false;
+            anodeMesh.visible = false;
+            anodeCollector.visible = false;
+            cathodeMesh.visible = false;
+            cathodeCollector.visible = false;
+            separatorMesh.visible = false;
+
+            if (cellType === 'cathode_half') {
+                liMetal.visible = true;
+                cathodeMesh.visible = (scaledCathodeHeight > 0.001);
+                cathodeCollector.visible = true;
+                separatorMesh.visible = true;
+
+                // Position: Li-Metal (top), Separator (middle), Cathode (bottom)
+                const cathodeY = -0.15 - (scaledCathodeHeight / 2);
+                liMetal.position.y = liMetalVisualY; // Positioned close
+                separatorMesh.position.y = 0;
+                cathodeMesh.scale.y = scaledCathodeHeight;
+                cathodeMesh.position.y = cathodeY;
+                cathodeCollector.position.y = cathodeY - (scaledCathodeHeight / 2) - 0.1;
+                
+            } else if (cellType === 'anode_half') {
+                liMetal.visible = true;
+                anodeMesh.visible = (scaledAnodeHeight > 0.001);
+                anodeCollector.visible = true;
+                separatorMesh.visible = true;
+
+                // Position: Anode (top), Separator (middle), Li-Metal (bottom)
+                const anodeY = 0.15 + (scaledAnodeHeight / 2);
+                liMetal.position.y = -liMetalVisualY; // Positioned close
+                separatorMesh.position.y = 0;
+                anodeMesh.scale.y = scaledAnodeHeight;
+                anodeMesh.position.y = anodeY;
+                anodeCollector.position.y = anodeY + (scaledAnodeHeight / 2) + 0.1;
+
+            } else if (cellType === 'full') {
+                anodeMesh.visible = (scaledAnodeHeight > 0.001);
+                anodeCollector.visible = true;
+                cathodeMesh.visible = (scaledCathodeHeight > 0.001);
+                cathodeCollector.visible = true;
+                separatorMesh.visible = true;
+
+                // Position: Anode (top), Separator (middle), Cathode (bottom)
+                const anodeY = 0.15 + (scaledAnodeHeight / 2);
+                const cathodeY = -0.15 - (scaledCathodeHeight / 2);
+                
+                anodeMesh.scale.y = scaledAnodeHeight;
+                anodeMesh.position.y = anodeY;
+                anodeCollector.position.y = anodeY + (scaledAnodeHeight / 2) + 0.1;
+                
+                separatorMesh.position.y = 0;
+                
+                cathodeMesh.scale.y = scaledCathodeHeight;
+                cathodeMesh.position.y = cathodeY;
+                cathodeCollector.position.y = cathodeY - (scaledCathodeHeight / 2) - 0.1;
+            }
+        }
+    </script>
+</body>
+</html>
