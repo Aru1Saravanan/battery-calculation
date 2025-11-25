@@ -268,14 +268,12 @@
         /* Vis Container */
         .vis-container {
             width: 100%;
-            /* FIX: Switched to flex column to stack chart and limit bar without overlap */
             display: flex;
             flex-direction: column;
             background-color: #ffffff; 
             border: 1px solid rgba(0, 0, 0, 0.1);
             border-radius: 0.5rem;
             overflow: hidden;
-            /* Ensure container has height */
             height: 400px; 
         }
         
@@ -289,7 +287,6 @@
         
         /* Limit Indicator Bar Graph */
         .limit-indicator-overlay {
-            /* FIX: Changed from absolute to relative/block flow */
             position: relative;
             width: 100%;
             padding: 0.75rem;
@@ -337,7 +334,6 @@
 
         @media (min-width: 1024px) {
             .vis-container {
-                /* FIX: Adjusted height for desktop */
                 height: 420px; 
                 flex-shrink: 0; 
                 aspect-ratio: auto; 
@@ -591,8 +587,6 @@
 
     <!-- JAVASCRIPT -->
     <script type="module">
-        // NO external Three.js imports needed anymore.
-
         // --- Global DOM Elements ---
         const cellTypeSelect = document.getElementById('cellType');
         
@@ -673,9 +667,8 @@
             
             // --- FIX: Use ResizeObserver on the wrapper ---
             const resizeObserver = new ResizeObserver(() => {
-                if(currentResults.finalNominalCap) {
-                    drawGraph(currentResults);
-                }
+                // We always try to draw graph if there is any potential capacity (even if one side missing)
+                drawGraph(currentResults);
             });
             
             // Observe the wrapper, not the flex container
@@ -817,39 +810,39 @@
             const anodeSpecificCapacity = parseFloat(anodeSpecificCapacityInput.value);
             const anodeCutoffCap = parseFloat(anodeCutoffCapInput.value);
 
+            // -- Reset Calculated vars --
             let finalNominalCap = NaN;
             let cathodeArealCap = NaN;
-            let cathodeArea_cm2 = NaN;
             let anodeArealCap = NaN;
-            let anodeArea_cm2 = NaN;
             let npRatio = NaN;
             let cathodeNominalCap = NaN;
             let anodeNominalCap = NaN;
             let cathodeActiveMass_mg = NaN;
             let anodeActiveMass_mg = NaN;
             let limitingElectrode = 'N/A';
-
-            let usedCathodeSpecCap = (cellType === 'full' && cathodeCutoffCap > 0) ? cathodeCutoffCap : cathodeSpecificCapacity;
-            let usedAnodeSpecCap = (cellType === 'full' && anodeCutoffCap > 0) ? anodeCutoffCap : anodeSpecificCapacity;
-
+            
+            // Independent Validity Checks for Graphing
+            let isCathodeValid = false;
+            let isAnodeValid = false;
 
             // --- Cathode Calculations ---
             if (cellType === 'full' || cellType === 'cathode_half') {
+                // Relaxed validation for partial graph rendering
                 const cathodeSlurryMass = cathodeTotalMass - cathodeFoilMass;
-                if (cathodeTotalMass > 0 && cathodeFoilMass > 0 && cathodeSlurryMass <= 0) {
-                    showError("Cathode Total Mass must be greater than Foil Mass.");
-                    clearResults();
-                    // update3DModel(0, 0, cellType);
-                    return;
+                if (cathodeTotalMass > 0 && cathodeFoilMass > 0 && cathodeSlurryMass > 0 && cathodeActivePercent > 0) {
+                    cathodeActiveMass_mg = cathodeSlurryMass * (cathodeActivePercent / 100);
+                    const cathodeActiveMass_g = cathodeActiveMass_mg / 1000;
+                    const cathodeArea_cm2 = Math.PI * Math.pow(cathodeDiameterVal / 10 / 2, 2);
+                    
+                    // Rule 1: Nominal Capacity derived strictly from Specific Capacity
+                    if(cathodeSpecificCapacity > 0) {
+                        cathodeNominalCap = cathodeActiveMass_g * cathodeSpecificCapacity;
+                        cathodeArealCap = cathodeNominalCap / cathodeArea_cm2;
+                        isCathodeValid = true;
+                    }
                 }
-                cathodeActiveMass_mg = cathodeSlurryMass * (cathodeActivePercent / 100);
-                const cathodeActiveMass_g = cathodeActiveMass_mg / 1000;
-                cathodeArea_cm2 = Math.PI * Math.pow(cathodeDiameterVal / 10 / 2, 2);
                 
-                cathodeNominalCap = cathodeActiveMass_g * usedCathodeSpecCap;
-                cathodeArealCap = cathodeNominalCap / cathodeArea_cm2;
-
-                if (cellType === 'cathode_half') {
+                if (cellType === 'cathode_half' && isCathodeValid) {
                     finalNominalCap = cathodeNominalCap;
                     limitingElectrode = 'Cathode (vs. Li-Metal)';
                 }
@@ -858,20 +851,29 @@
             // --- Anode Calculations ---
              if (cellType === 'full' || cellType === 'anode_half') {
                 const anodeSlurryMass = anodeTotalMass - anodeFoilMass;
-                if (anodeTotalMass > 0 && anodeFoilMass > 0 && anodeSlurryMass <= 0) {
-                    showError("Anode Total Mass must be greater than Foil Mass.");
-                    clearResults();
-                    // update3DModel(0, 0, cellType);
-                    return;
+                if (anodeTotalMass > 0 && anodeFoilMass > 0 && anodeSlurryMass > 0 && anodeActivePercent > 0) {
+                    anodeActiveMass_mg = anodeSlurryMass * (anodeActivePercent / 100);
+                    const anodeActiveMass_g = anodeActiveMass_mg / 1000;
+                    const anodeArea_cm2 = Math.PI * Math.pow(anodeDiameterVal / 10 / 2, 2);
+                    
+                    // Rule 2: Nominal Capacity derived strictly from Specific Capacity
+                    // In Full Cell, input is hidden but logic requires it. 
+                    // We use the value if present, or fallback to cutoff if strictly necessary for visual, 
+                    // but user asked for specific cap strictness.
+                    let usedAnodeSpecCap = anodeSpecificCapacity;
+                    if (cellType === 'full' && (isNaN(usedAnodeSpecCap) || usedAnodeSpecCap === 0)) {
+                         // Fallback to cutoff just so we have a number for the 'Nominal' curve end
+                         usedAnodeSpecCap = anodeCutoffCap; 
+                    }
+
+                    if(usedAnodeSpecCap > 0) {
+                        anodeNominalCap = anodeActiveMass_g * usedAnodeSpecCap;
+                        anodeArealCap = anodeNominalCap / anodeArea_cm2;
+                        isAnodeValid = true;
+                    }
                 }
-                anodeActiveMass_mg = anodeSlurryMass * (anodeActivePercent / 100);
-                const anodeActiveMass_g = anodeActiveMass_mg / 1000;
-                anodeArea_cm2 = Math.PI * Math.pow(anodeDiameterVal / 10 / 2, 2);
                 
-                anodeNominalCap = anodeActiveMass_g * usedAnodeSpecCap;
-                anodeArealCap = anodeNominalCap / anodeArea_cm2;
-                
-                if (cellType === 'anode_half') {
+                if (cellType === 'anode_half' && isAnodeValid) {
                     finalNominalCap = anodeNominalCap;
                     limitingElectrode = 'Anode (vs. Li-Metal)';
                 }
@@ -879,24 +881,64 @@
             
             // --- Full-Cell Final Calculations ---
             if (cellType === 'full') {
-                npRatio = anodeArealCap / cathodeArealCap;
-                finalNominalCap = Math.min(cathodeNominalCap, anodeNominalCap);
-                limitingElectrode = (cathodeNominalCap < anodeNominalCap) ? 'Cathode' : 'Anode';
+                // Only calculate N/P and Full Cell if BOTH are valid
+                if (isCathodeValid && isAnodeValid) {
+                    // Rule 1: Full Cell Nominal = Cathode Nominal (Specific)
+                    finalNominalCap = cathodeNominalCap;
+                    
+                    // Rule 3: N/P Ratio calculated exclusively from Cut-off Capacities
+                    if (cathodeCutoffCap > 0 && anodeCutoffCap > 0) {
+                        const cathodeActiveMass_g = cathodeActiveMass_mg / 1000;
+                        const anodeActiveMass_g = anodeActiveMass_mg / 1000;
+                        
+                        // Need Area
+                        const cathodeArea_cm2 = Math.PI * Math.pow(cathodeDiameterVal / 10 / 2, 2);
+                        const anodeArea_cm2 = Math.PI * Math.pow(anodeDiameterVal / 10 / 2, 2);
+
+                        const cathodeCapForNP = cathodeActiveMass_g * cathodeCutoffCap;
+                        const anodeCapForNP = anodeActiveMass_g * anodeCutoffCap;
+
+                        const cathodeArealForNP = cathodeCapForNP / cathodeArea_cm2;
+                        const anodeArealForNP = anodeCapForNP / anodeArea_cm2;
+
+                        npRatio = anodeArealForNP / cathodeArealForNP;
+                        
+                        limitingElectrode = (npRatio > 1.0) ? 'Cathode' : 'Anode';
+                    }
+                } else if (isCathodeValid) {
+                    // Partial State: Only Cathode entered
+                    limitingElectrode = 'Cathode (Partial)';
+                } else if (isAnodeValid) {
+                    // Partial State: Only Anode entered (unlikely flow but possible)
+                    limitingElectrode = 'Anode (Partial)';
+                }
             }
 
             // --- Update UI ---
-            const hasValidCap = !isNaN(finalNominalCap) && finalNominalCap > 0;
-            nominalCapacityVal.textContent = hasValidCap ? `${finalNominalCap.toFixed(3)} mAh` : "- mAh";
+            // Always clear first
+            nominalCapacityVal.textContent = "- mAh";
+            cathodeMassVal.textContent = "-";
+            cathodeArealCapVal.textContent = "-";
+            anodeMassVal.textContent = "-";
+            anodeArealCapVal.textContent = "-";
+            mainNpVal.textContent = "-";
+
+            if (isCathodeValid) {
+                cathodeMassVal.textContent = `${cathodeActiveMass_mg.toFixed(2)}`;
+                cathodeArealCapVal.textContent = `${cathodeArealCap.toFixed(2)} mAh/cm²`;
+            }
             
-            cathodeMassVal.textContent = isNaN(cathodeActiveMass_mg) ? "-" : `${cathodeActiveMass_mg.toFixed(2)}`;
-            anodeMassVal.textContent = isNaN(anodeActiveMass_mg) ? "-" : `${anodeActiveMass_mg.toFixed(2)}`;
-            
-            cathodeArealCapVal.textContent = isNaN(cathodeArealCap) ? "-" : `${cathodeArealCap.toFixed(2)} mAh/cm²`;
-            
-            // Update Main N/P
-            mainNpVal.textContent = isNaN(npRatio) ? "-" : `${npRatio.toFixed(2)}`;
-            
-            anodeArealCapVal.textContent = isNaN(anodeArealCap) ? "-" : `${anodeArealCap.toFixed(2)} mAh/cm²`;
+            if (isAnodeValid) {
+                anodeMassVal.textContent = `${anodeActiveMass_mg.toFixed(2)}`;
+                anodeArealCapVal.textContent = `${anodeArealCap.toFixed(2)} mAh/cm²`;
+            }
+
+            if (cellType === 'full' && isCathodeValid && isAnodeValid && !isNaN(finalNominalCap)) {
+                nominalCapacityVal.textContent = `${finalNominalCap.toFixed(3)} mAh`;
+                if(!isNaN(npRatio)) mainNpVal.textContent = `${npRatio.toFixed(2)}`;
+            } else if (cellType !== 'full' && !isNaN(finalNominalCap)) {
+                nominalCapacityVal.textContent = `${finalNominalCap.toFixed(3)} mAh`;
+            }
 
             currentResults = {
                 cellType: cellType,
@@ -904,48 +946,38 @@
                 cathodeArealCap: cathodeArealCap,
                 anodeArealCap: anodeArealCap,
                 npRatio: npRatio,
-                cathodeSpecificCapacity: usedCathodeSpecCap || 'N/A',
-                anodeSpecificCapacity: usedAnodeSpecCap || 'N/A',
+                cathodeSpecificCapacity: cathodeSpecificCapacity || 'N/A',
+                anodeSpecificCapacity: anodeSpecificCapacity || 'N/A',
                 cathodeActiveMass_mg: cathodeActiveMass_mg,
                 anodeActiveMass_mg: anodeActiveMass_mg,
                 limitingElectrode: limitingElectrode,
-                // Add electrode capacities for graph scaling
-                cathodeNominalCap: cathodeNominalCap,
-                anodeNominalCap: anodeNominalCap
+                // Pass individual capacities for graph
+                cathodeNominalCap: isCathodeValid ? cathodeNominalCap : 0,
+                anodeNominalCap: isAnodeValid ? anodeNominalCap : 0
             };
 
-            if (hasValidCap) {
+            if (cellType === 'full' && isCathodeValid && isAnodeValid && !isNaN(finalNominalCap)) {
                 viewLogBtn.classList.remove('hidden');
                 addLogEntry(currentResults); 
+            } else if (cellType !== 'full' && !isNaN(finalNominalCap)) {
+                viewLogBtn.classList.remove('hidden');
+                addLogEntry(currentResults);
             } else {
                 if (sessionLogs.length === 0) {
                     viewLogBtn.classList.add('hidden');
                 }
             }
             
-            // DRAW THE GRAPH
+            // DRAW THE GRAPH (Can handle partials now)
             drawGraph(currentResults);
             
-            updateLimitIndicator(cathodeNominalCap, anodeNominalCap, limitingElectrode, cellType);
+            // FIX: Pass Areal Capacities instead of Nominal Capacities
+            updateLimitIndicator(cathodeArealCap, anodeArealCap, limitingElectrode, cellType);
         }
 
         function clearResults() {
-            nominalCapacityVal.textContent = "- mAh";
-            cathodeMassVal.textContent = "-";
-            cathodeArealCapVal.textContent = "-";
-            anodeMassVal.textContent = "-";
-            anodeArealCapVal.textContent = "-";
-            mainNpVal.textContent = "-";
-            
-            // Clear graph
-            const ctx = chartCanvas.getContext('2d');
-            ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-            
-            if (sessionLogs.length === 0) {
-                 viewLogBtn.classList.add('hidden');
-            }
-            currentResults = {};
-            updateLimitIndicator(0, 0, 'N/A', cellTypeSelect.value);
+            // Just reset data, graph handles empty state
+            calculate();
         }
 
         function showError(message) {
@@ -957,8 +989,8 @@
             errorMessage.style.display = 'none';
         }
 
-        function updateLimitIndicator(cathodeCap, anodeCap, limitingElectrode, cellType) {
-            if (cellType !== 'full' || isNaN(cathodeCap) || isNaN(anodeCap) || cathodeCap <= 0 || anodeCap <= 0) {
+        function updateLimitIndicator(cathodeAreal, anodeAreal, limitingElectrode, cellType) {
+            if (cellType !== 'full' || isNaN(cathodeAreal) || isNaN(anodeAreal) || cathodeAreal <= 0 || anodeAreal <= 0) {
                 limitIndicator.style.display = 'none'; 
                 return;
             }
@@ -976,15 +1008,17 @@
                 limitLabel.style.color = '#334155'; 
             }
             
-            const maxCap = Math.max(cathodeCap, anodeCap);
-            const cathodeWidth = (cathodeCap / maxCap) * 100;
-            const anodeWidth = (anodeCap / maxCap) * 100;
+            // Use Areal Capacities for bar width calculation
+            const maxCap = Math.max(cathodeAreal, anodeAreal);
+            const cathodeWidth = (cathodeAreal / maxCap) * 100;
+            const anodeWidth = (anodeAreal / maxCap) * 100;
 
             limitBarCathode.style.width = `${cathodeWidth}%`;
             limitBarAnode.style.width = `${anodeWidth}%`;
             
-            limitBarCathode.textContent = cathodeCap.toFixed(2);
-            limitBarAnode.textContent = anodeCap.toFixed(2);
+            // Display Areal Capacity values
+            limitBarCathode.textContent = cathodeAreal.toFixed(2) + " mAh/cm²";
+            limitBarAnode.textContent = anodeAreal.toFixed(2) + " mAh/cm²";
         }
 
         // --- GRAPH DRAWING FUNCTION ---
@@ -992,32 +1026,33 @@
             if (!chartCanvas) return;
             const ctx = chartCanvas.getContext('2d');
             
-            // Handle DPI for crisp rendering
             const dpr = window.devicePixelRatio || 1;
-            
-            // FIX: Use clientWidth/Height from the WRAPPER
             const container = chartCanvas.parentElement;
             const width = container.clientWidth;
             const height = container.clientHeight;
             
-            // Set canvas dimensions explicitly
             chartCanvas.width = width * dpr;
             chartCanvas.height = height * dpr;
             
-            // Reset transform
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.scale(dpr, dpr);
             
-            // FIX: Increased bottom padding slightly for axis labels
             const padding = { top: 30, right: 30, bottom: 50, left: 60 };
             const chartW = width - padding.left - padding.right;
             const chartH = height - padding.top - padding.bottom;
             
             ctx.clearRect(0, 0, width, height);
 
-            // Basic Validation
-            if (!data.finalNominalCap || data.finalNominalCap <= 0) {
-                // Draw Empty State
+            // FIX: Use Areal Capacities for Graphing
+            const cAreal = isNaN(data.cathodeArealCap) ? 0 : data.cathodeArealCap;
+            const aAreal = isNaN(data.anodeArealCap) ? 0 : data.anodeArealCap;
+
+            // Check what data we have (based on areal values now)
+            const hasCathode = cAreal > 0;
+            const hasAnode = aAreal > 0;
+            
+            // If nothing valid, show placeholder
+            if (!hasCathode && !hasAnode) {
                 ctx.fillStyle = "#94a3b8";
                 ctx.font = "14px Inter";
                 ctx.textAlign = "center";
@@ -1025,14 +1060,23 @@
                 return;
             }
 
-            // Determine X and Y max
-            let xMax = data.finalNominalCap;
-            let yMin = 0;
-            let yMax = 5.0; // Default Voltage Max
-            
+            // Determine X max (Visualize Excess based on Areal Capacity)
+            let xMax = 0;
             if (data.cellType === 'full') {
-                 // FIX: Show full range 0-5V to see Anode (Graphite) curve
-                 xMax = data.finalNominalCap;
+                xMax = Math.max(cAreal, aAreal);
+            } else if (data.cellType === 'cathode_half') {
+                xMax = cAreal;
+            } else if (data.cellType === 'anode_half') {
+                xMax = aAreal;
+            }
+            
+            // Safety for empty
+            if (xMax === 0) xMax = 5; // Default scale if 0
+
+            // Determine Y scale
+            let yMin = 0;
+            let yMax = 5.0;
+            if (data.cellType === 'full') {
                  yMax = 5.0;
                  yMin = 0.0; 
             } else if (data.cellType === 'cathode_half') {
@@ -1047,10 +1091,8 @@
             ctx.beginPath();
             ctx.strokeStyle = "#cbd5e1";
             ctx.lineWidth = 1;
-            // Y Axis
             ctx.moveTo(padding.left, padding.top);
             ctx.lineTo(padding.left, height - padding.bottom);
-            // X Axis
             ctx.lineTo(width - padding.right, height - padding.bottom);
             ctx.stroke();
             
@@ -1058,15 +1100,11 @@
             ctx.fillStyle = "#475569";
             ctx.font = "11px Inter";
             ctx.textAlign = "center";
-            
-            // X Axis Label
-            ctx.fillText("Capacity (mAh)", padding.left + chartW/2, height - 15);
-            // X Axis Max Value
+            // FIX: Update X Axis Label
+            ctx.fillText("Areal Capacity (mAh/cm²)", padding.left + chartW/2, height - 15);
             ctx.fillText(xMax.toFixed(2), width - padding.right, height - 30);
-            // X Axis Origin
             ctx.fillText("0", padding.left, height - 30);
             
-            // Y Axis Label
             ctx.save();
             ctx.translate(20, padding.top + chartH/2);
             ctx.rotate(-Math.PI/2);
@@ -1074,12 +1112,11 @@
             ctx.fillText(yLabelText, 0, 0);
             ctx.restore();
             
-            // Y Axis Values
             ctx.textAlign = "right";
             ctx.fillText(yMax.toFixed(1) + " V", padding.left - 10, padding.top + 5);
             ctx.fillText(yMin.toFixed(1) + " V", padding.left - 10, height - padding.bottom);
 
-            // --- Helper to map data to pixels ---
+            // Map helpers
             const mapX = (val) => padding.left + (val / xMax) * chartW;
             const mapY = (val) => (height - padding.bottom) - ((val - yMin) / (yMax - yMin)) * chartH;
 
@@ -1111,21 +1148,24 @@
             // --- Draw Curves ---
             const steps = 100;
             
-            // Function to draw a single line
-            const drawLine = (color, calculateY) => {
+            const drawLine = (color, capLimit, calculateY) => {
                 ctx.beginPath();
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 2;
-                for (let i = 0; i <= steps; i++) {
-                    const percent = i / steps; 
-                    const xVal = percent * xMax;
+                // We draw up to capLimit
+                const drawSteps = Math.floor(steps * (capLimit / xMax)); 
+                
+                for (let i = 0; i <= drawSteps; i++) {
+                    const currentCap = (i / drawSteps) * capLimit;
+                    // Calculate normalized capacity percentage relative to *its own* max for shape
+                    const percent = currentCap / capLimit; 
+                    
                     let yVal = calculateY(percent);
                     
-                    // Clamp
                     if (yVal < yMin) yVal = yMin;
                     if (yVal > yMax) yVal = yMax;
                     
-                    const plotX = mapX(xVal);
+                    const plotX = mapX(currentCap);
                     const plotY = mapY(yVal);
                     
                     if (i === 0) ctx.moveTo(plotX, plotY);
@@ -1134,28 +1174,34 @@
                 ctx.stroke();
             };
 
-            // 1. Cathode Curve (Cyan)
-            if (data.cellType === 'full' || data.cellType === 'cathode_half') {
-                drawLine("#0891b2", (p) => {
-                    // Typical NMC-like profile
+            // 1. Cathode Curve (Uses cAreal)
+            if ((data.cellType === 'full' || data.cellType === 'cathode_half') && hasCathode) {
+                drawLine("#0891b2", cAreal, (p) => {
                     return 4.3 - (0.5 * p) - (0.4 * Math.pow(p, 5));
                 });
             }
 
-            // 2. Anode Curve (Orange) - Graphite
-            if (data.cellType === 'full' || data.cellType === 'anode_half') {
-                drawLine("#ea580c", (p) => {
-                    // Graphite Delithiation profile (0.1V plateau -> rise)
-                    // Added stage-like waviness for realism
+            // 2. Anode Curve (Uses aAreal)
+            if ((data.cellType === 'full' || data.cellType === 'anode_half') && hasAnode) {
+                drawLine("#ea580c", aAreal, (p) => {
                     return 0.05 + (0.1 * p) + (0.02 * Math.sin(p * Math.PI * 4)) + (0.5 * Math.pow(p, 10));
                 });
             }
             
-            // 3. Full Cell Voltage (Dark Blue)
-            if (data.cellType === 'full') {
-                drawLine("#1e293b", (p) => {
-                    const vCat = 4.3 - (0.5 * p) - (0.4 * Math.pow(p, 5));
-                    const vAn = 0.05 + (0.1 * p) + (0.02 * Math.sin(p * Math.PI * 4)) + (0.5 * Math.pow(p, 10));
+            // 3. Full Cell Voltage (Only if BOTH present)
+            if (data.cellType === 'full' && hasCathode && hasAnode) {
+                // Full cell is limited by the SMALLER loading (Areal Capacity)
+                const cellLimit = Math.min(cAreal, aAreal);
+                
+                drawLine("#1e293b", cellLimit, (p) => {
+                    // Convert p (relative to limit) to absolute capacity, then to electrode percent
+                    const cap = p * cellLimit;
+                    const pCat = cap / cAreal;
+                    const pAn = cap / aAreal;
+                    
+                    const vCat = 4.3 - (0.5 * pCat) - (0.4 * Math.pow(pCat, 5));
+                    const vAn = 0.05 + (0.1 * pAn) + (0.02 * Math.sin(pAn * Math.PI * 4)) + (0.5 * Math.pow(pAn, 10));
+                    
                     return vCat - vAn;
                 });
             }
