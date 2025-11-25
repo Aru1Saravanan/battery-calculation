@@ -1073,12 +1073,49 @@
             // Safety for empty
             if (xMax === 0) xMax = 5; // Default scale if 0
 
-            // Determine Y scale
+            // --- Y-Axis Setup with Break for Full Cell ---
             let yMin = 0;
             let yMax = 5.0;
+            
+            // Helpers for Full Cell split-axis
+            // Lower Zone: 0 - 1.5V maps to bottom 25%
+            // Upper Zone: 2.5 - 5.0V maps to top 65%
+            // Gap: 10%
+            const lowerLimit = 1.5;
+            const upperStart = 2.5;
+            const upperLimit = 5.0;
+            
+            // Map function for broken axis
+            const mapY = (val) => {
+                if (data.cellType === 'full') {
+                    // Upper section (Cathode/Cell)
+                    if (val >= upperStart) {
+                        // Map 2.5-5.0 to 0 - 0.65*H
+                        const norm = (val - upperStart) / (upperLimit - upperStart); // 0 to 1
+                        const sectionH = chartH * 0.65;
+                        // Top of chartH is y=0 relative to plot area
+                        return padding.top + sectionH * (1 - norm);
+                    } 
+                    // Lower section (Anode)
+                    else if (val <= lowerLimit) {
+                        // Map 0-1.5 to 0.75*H - H
+                        const norm = (val - 0) / (lowerLimit - 0); // 0 to 1
+                        const sectionTop = chartH * 0.75; // 75% down
+                        const sectionH = chartH * 0.25; // remaining 25%
+                        return padding.top + sectionTop + sectionH * (1 - norm);
+                    }
+                    // In the break
+                    else {
+                        return -100; // Don't draw
+                    }
+                } else {
+                    // Standard linear mapping for half cells
+                    return (height - padding.bottom) - ((val - yMin) / (yMax - yMin)) * chartH;
+                }
+            };
+
             if (data.cellType === 'full') {
-                 yMax = 5.0;
-                 yMin = 0.0; 
+                 // Logic handled in mapY
             } else if (data.cellType === 'cathode_half') {
                  yMin = 2.0;
                  yMax = 4.8;
@@ -1087,24 +1124,63 @@
                  yMax = 2.0;
             }
             
-            // Draw Axes
+            // --- Draw Axes & Labels ---
             ctx.beginPath();
             ctx.strokeStyle = "#cbd5e1";
             ctx.lineWidth = 1;
-            ctx.moveTo(padding.left, padding.top);
-            ctx.lineTo(padding.left, height - padding.bottom);
+            
+            if (data.cellType === 'full') {
+                // Draw Split Y Axis
+                // Upper part
+                const ySplitTop = mapY(upperStart);
+                const ySplitBottom = mapY(lowerLimit);
+                
+                ctx.moveTo(padding.left, padding.top); // Top
+                ctx.lineTo(padding.left, ySplitTop); // Break start
+                
+                ctx.moveTo(padding.left, ySplitBottom); // Break end
+                ctx.lineTo(padding.left, height - padding.bottom); // Bottom
+                
+                // Draw zig-zag break symbol
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = "#94a3b8";
+                const zigX = padding.left;
+                const zigW = 4;
+                const breakMid = (ySplitTop + ySplitBottom) / 2;
+                // Simple parallel lines for break
+                ctx.moveTo(zigX - zigW, ySplitTop + 2);
+                ctx.lineTo(zigX + zigW, ySplitTop - 2);
+                ctx.moveTo(zigX - zigW, ySplitBottom + 2);
+                ctx.lineTo(zigX + zigW, ySplitBottom - 2);
+                ctx.stroke();
+                
+                // Reset line style
+                ctx.beginPath();
+                ctx.strokeStyle = "#cbd5e1";
+                ctx.lineWidth = 1;
+            } else {
+                // Standard Y Axis
+                ctx.moveTo(padding.left, padding.top);
+                ctx.lineTo(padding.left, height - padding.bottom);
+            }
+            
+            // X Axis
+            ctx.moveTo(padding.left, height - padding.bottom);
             ctx.lineTo(width - padding.right, height - padding.bottom);
             ctx.stroke();
             
-            // Labels
+            // X Axis Labels
             ctx.fillStyle = "#475569";
             ctx.font = "11px Inter";
             ctx.textAlign = "center";
-            // FIX: Update X Axis Label
             ctx.fillText("Areal Capacity (mAh/cm²)", padding.left + chartW/2, height - 15);
             ctx.fillText(xMax.toFixed(2), width - padding.right, height - 30);
             ctx.fillText("0", padding.left, height - 30);
             
+            // Y Axis Labels
             ctx.save();
             ctx.translate(20, padding.top + chartH/2);
             ctx.rotate(-Math.PI/2);
@@ -1113,12 +1189,20 @@
             ctx.restore();
             
             ctx.textAlign = "right";
-            ctx.fillText(yMax.toFixed(1) + " V", padding.left - 10, padding.top + 5);
-            ctx.fillText(yMin.toFixed(1) + " V", padding.left - 10, height - padding.bottom);
+            if (data.cellType === 'full') {
+                // Custom Labels for Split Axis
+                ctx.fillText("5.0 V", padding.left - 10, padding.top + 5);
+                ctx.fillText("2.5 V", padding.left - 10, mapY(2.5) + 5);
+                ctx.fillText("1.5 V", padding.left - 10, mapY(1.5) + 5);
+                ctx.fillText("0.0 V", padding.left - 10, height - padding.bottom);
+            } else {
+                ctx.fillText(yMax.toFixed(1) + " V", padding.left - 10, padding.top + 5);
+                ctx.fillText(yMin.toFixed(1) + " V", padding.left - 10, height - padding.bottom);
+            }
 
             // Map helpers
             const mapX = (val) => padding.left + (val / xMax) * chartW;
-            const mapY = (val) => (height - padding.bottom) - ((val - yMin) / (yMax - yMin)) * chartH;
+            // mapY is defined above
 
             // --- Draw Legend for Full Cell ---
             if (data.cellType === 'full') {
@@ -1155,21 +1239,35 @@
                 // We draw up to capLimit
                 const drawSteps = Math.floor(steps * (capLimit / xMax)); 
                 
+                let isDrawing = false; // Handle break interruption
+
                 for (let i = 0; i <= drawSteps; i++) {
                     const currentCap = (i / drawSteps) * capLimit;
-                    // Calculate normalized capacity percentage relative to *its own* max for shape
                     const percent = currentCap / capLimit; 
                     
                     let yVal = calculateY(percent);
                     
-                    if (yVal < yMin) yVal = yMin;
-                    if (yVal > yMax) yVal = yMax;
-                    
+                    // Handling value ranges for standard half cells
+                    if (data.cellType !== 'full') {
+                        if (yVal < yMin) yVal = yMin;
+                        if (yVal > yMax) yVal = yMax;
+                    }
+
                     const plotX = mapX(currentCap);
                     const plotY = mapY(yVal);
                     
-                    if (i === 0) ctx.moveTo(plotX, plotY);
-                    else ctx.lineTo(plotX, plotY);
+                    // Skip drawing if in the "break" zone (returns -100)
+                    if (plotY === -100) {
+                        isDrawing = false;
+                        continue;
+                    }
+                    
+                    if (!isDrawing || i === 0) {
+                        ctx.moveTo(plotX, plotY);
+                        isDrawing = true;
+                    } else {
+                        ctx.lineTo(plotX, plotY);
+                    }
                 }
                 ctx.stroke();
             };
