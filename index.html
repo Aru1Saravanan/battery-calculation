@@ -821,24 +821,41 @@
             let anodeActiveMass_mg = NaN;
             let limitingElectrode = 'N/A';
             
-            // Independent Validity Checks for Graphing
+            // These store areal capacity *for graph drawing*, separate from displayed results
+            let graphCathodeAreal = 0;
+            let graphAnodeAreal = 0;
+
+            // Independent Validity Checks
             let isCathodeValid = false;
             let isAnodeValid = false;
 
             // --- Cathode Calculations ---
             if (cellType === 'full' || cellType === 'cathode_half') {
-                // Relaxed validation for partial graph rendering
                 const cathodeSlurryMass = cathodeTotalMass - cathodeFoilMass;
                 if (cathodeTotalMass > 0 && cathodeFoilMass > 0 && cathodeSlurryMass > 0 && cathodeActivePercent > 0) {
                     cathodeActiveMass_mg = cathodeSlurryMass * (cathodeActivePercent / 100);
                     const cathodeActiveMass_g = cathodeActiveMass_mg / 1000;
                     const cathodeArea_cm2 = Math.PI * Math.pow(cathodeDiameterVal / 10 / 2, 2);
                     
-                    // Rule 1: Nominal Capacity derived strictly from Specific Capacity
-                    if(cathodeSpecificCapacity > 0) {
+                    if (cellType === 'full') {
+                        // RULE 3: Full Cell Nominal Cap calculated from Cathode Specific Capacity
                         cathodeNominalCap = cathodeActiveMass_g * cathodeSpecificCapacity;
-                        cathodeArealCap = cathodeNominalCap / cathodeArea_cm2;
-                        isCathodeValid = true;
+                        
+                        // RULE 1: Full Cell Areal Cap displayed/graphed from Cutoff Capacity
+                        if (cathodeCutoffCap > 0) {
+                            const cutoffTotalCap = cathodeActiveMass_g * cathodeCutoffCap;
+                            graphCathodeAreal = cutoffTotalCap / cathodeArea_cm2;
+                            cathodeArealCap = graphCathodeAreal; // For display
+                            isCathodeValid = true;
+                        }
+                    } else {
+                        // Half Cell: Uses Specific Capacity for everything (RULE 2)
+                        if (cathodeSpecificCapacity > 0) {
+                            cathodeNominalCap = cathodeActiveMass_g * cathodeSpecificCapacity;
+                            cathodeArealCap = cathodeNominalCap / cathodeArea_cm2;
+                            graphCathodeAreal = cathodeArealCap;
+                            isCathodeValid = true;
+                        }
                     }
                 }
                 
@@ -856,20 +873,23 @@
                     const anodeActiveMass_g = anodeActiveMass_mg / 1000;
                     const anodeArea_cm2 = Math.PI * Math.pow(anodeDiameterVal / 10 / 2, 2);
                     
-                    // Rule 2: Nominal Capacity derived strictly from Specific Capacity
-                    // In Full Cell, input is hidden but logic requires it. 
-                    // We use the value if present, or fallback to cutoff if strictly necessary for visual, 
-                    // but user asked for specific cap strictness.
-                    let usedAnodeSpecCap = anodeSpecificCapacity;
-                    if (cellType === 'full' && (isNaN(usedAnodeSpecCap) || usedAnodeSpecCap === 0)) {
-                         // Fallback to cutoff just so we have a number for the 'Nominal' curve end
-                         usedAnodeSpecCap = anodeCutoffCap; 
-                    }
-
-                    if(usedAnodeSpecCap > 0) {
-                        anodeNominalCap = anodeActiveMass_g * usedAnodeSpecCap;
-                        anodeArealCap = anodeNominalCap / anodeArea_cm2;
-                        isAnodeValid = true;
+                    if (cellType === 'full') {
+                        // RULE 5: Anode nominal/specific cap not important for full cell nominal
+                        // RULE 1: Anode Areal Cap displayed/graphed from Cutoff Capacity
+                        if (anodeCutoffCap > 0) {
+                            const cutoffTotalCap = anodeActiveMass_g * anodeCutoffCap;
+                            graphAnodeAreal = cutoffTotalCap / anodeArea_cm2;
+                            anodeArealCap = graphAnodeAreal; // For display
+                            isAnodeValid = true;
+                        }
+                    } else {
+                        // Half Cell: Uses Specific Capacity for everything (RULE 2 & 4)
+                        if (anodeSpecificCapacity > 0) {
+                            anodeNominalCap = anodeActiveMass_g * anodeSpecificCapacity;
+                            anodeArealCap = anodeNominalCap / anodeArea_cm2;
+                            graphAnodeAreal = anodeArealCap;
+                            isAnodeValid = true;
+                        }
                     }
                 }
                 
@@ -881,41 +901,25 @@
             
             // --- Full-Cell Final Calculations ---
             if (cellType === 'full') {
-                // Only calculate N/P and Full Cell if BOTH are valid
+                // RULE 3: Nominal Capacity is strictly Cathode Specific Capacity
+                // We check if cathode inputs (mass, etc) are valid, even if cutoff (for N/P) is missing
+                if (cathodeActiveMass_mg > 0 && cathodeSpecificCapacity > 0) {
+                     finalNominalCap = (cathodeActiveMass_mg / 1000) * cathodeSpecificCapacity;
+                }
+
+                // Only calculate N/P and Limit if BOTH cutoffs are valid (RULE 1)
                 if (isCathodeValid && isAnodeValid) {
-                    // Rule 1: Full Cell Nominal = Cathode Nominal (Specific)
-                    finalNominalCap = cathodeNominalCap;
-                    
-                    // Rule 3: N/P Ratio calculated exclusively from Cut-off Capacities
-                    if (cathodeCutoffCap > 0 && anodeCutoffCap > 0) {
-                        const cathodeActiveMass_g = cathodeActiveMass_mg / 1000;
-                        const anodeActiveMass_g = anodeActiveMass_mg / 1000;
-                        
-                        // Need Area
-                        const cathodeArea_cm2 = Math.PI * Math.pow(cathodeDiameterVal / 10 / 2, 2);
-                        const anodeArea_cm2 = Math.PI * Math.pow(anodeDiameterVal / 10 / 2, 2);
-
-                        const cathodeCapForNP = cathodeActiveMass_g * cathodeCutoffCap;
-                        const anodeCapForNP = anodeActiveMass_g * anodeCutoffCap;
-
-                        const cathodeArealForNP = cathodeCapForNP / cathodeArea_cm2;
-                        const anodeArealForNP = anodeCapForNP / anodeArea_cm2;
-
-                        npRatio = anodeArealForNP / cathodeArealForNP;
-                        
-                        limitingElectrode = (npRatio > 1.0) ? 'Cathode' : 'Anode';
-                    }
+                    // N/P = Anode Cutoff Areal / Cathode Cutoff Areal
+                    npRatio = graphAnodeAreal / graphCathodeAreal;
+                    limitingElectrode = (npRatio > 1.0) ? 'Cathode' : 'Anode';
                 } else if (isCathodeValid) {
-                    // Partial State: Only Cathode entered
                     limitingElectrode = 'Cathode (Partial)';
                 } else if (isAnodeValid) {
-                    // Partial State: Only Anode entered (unlikely flow but possible)
                     limitingElectrode = 'Anode (Partial)';
                 }
             }
 
             // --- Update UI ---
-            // Always clear first
             nominalCapacityVal.textContent = "- mAh";
             cathodeMassVal.textContent = "-";
             cathodeArealCapVal.textContent = "-";
@@ -923,21 +927,20 @@
             anodeArealCapVal.textContent = "-";
             mainNpVal.textContent = "-";
 
-            if (isCathodeValid) {
-                cathodeMassVal.textContent = `${cathodeActiveMass_mg.toFixed(2)}`;
-                cathodeArealCapVal.textContent = `${cathodeArealCap.toFixed(2)} mAh/cm²`;
+            // Update Mass displays if calculated
+            if (!isNaN(cathodeActiveMass_mg)) cathodeMassVal.textContent = `${cathodeActiveMass_mg.toFixed(2)}`;
+            if (!isNaN(anodeActiveMass_mg)) anodeMassVal.textContent = `${anodeActiveMass_mg.toFixed(2)}`;
+
+            // Update Areal Displays (validity check handled above)
+            if (isCathodeValid) cathodeArealCapVal.textContent = `${cathodeArealCap.toFixed(2)} mAh/cm²`;
+            if (isAnodeValid) anodeArealCapVal.textContent = `${anodeArealCap.toFixed(2)} mAh/cm²`;
+
+            if (!isNaN(finalNominalCap)) {
+                nominalCapacityVal.textContent = `${finalNominalCap.toFixed(3)} mAh`;
             }
             
-            if (isAnodeValid) {
-                anodeMassVal.textContent = `${anodeActiveMass_mg.toFixed(2)}`;
-                anodeArealCapVal.textContent = `${anodeArealCap.toFixed(2)} mAh/cm²`;
-            }
-
-            if (cellType === 'full' && isCathodeValid && isAnodeValid && !isNaN(finalNominalCap)) {
-                nominalCapacityVal.textContent = `${finalNominalCap.toFixed(3)} mAh`;
-                if(!isNaN(npRatio)) mainNpVal.textContent = `${npRatio.toFixed(2)}`;
-            } else if (cellType !== 'full' && !isNaN(finalNominalCap)) {
-                nominalCapacityVal.textContent = `${finalNominalCap.toFixed(3)} mAh`;
+            if (cellType === 'full' && !isNaN(npRatio)) {
+                mainNpVal.textContent = `${npRatio.toFixed(2)}`;
             }
 
             currentResults = {
@@ -951,9 +954,9 @@
                 cathodeActiveMass_mg: cathodeActiveMass_mg,
                 anodeActiveMass_mg: anodeActiveMass_mg,
                 limitingElectrode: limitingElectrode,
-                // Pass individual capacities for graph
-                cathodeNominalCap: isCathodeValid ? cathodeNominalCap : 0,
-                anodeNominalCap: isAnodeValid ? anodeNominalCap : 0
+                // Pass graph specific areal values
+                cathodeNominalCap: graphCathodeAreal, // Reusing prop name for graph scale
+                anodeNominalCap: graphAnodeAreal      // Reusing prop name for graph scale
             };
 
             if (cellType === 'full' && isCathodeValid && isAnodeValid && !isNaN(finalNominalCap)) {
@@ -971,8 +974,8 @@
             // DRAW THE GRAPH (Can handle partials now)
             drawGraph(currentResults);
             
-            // FIX: Pass Areal Capacities instead of Nominal Capacities
-            updateLimitIndicator(cathodeArealCap, anodeArealCap, limitingElectrode, cellType);
+            // Pass Areal Capacities instead of Nominal Capacities
+            updateLimitIndicator(graphCathodeAreal, graphAnodeAreal, limitingElectrode, cellType);
         }
 
         function clearResults() {
@@ -1043,9 +1046,9 @@
             
             ctx.clearRect(0, 0, width, height);
 
-            // FIX: Use Areal Capacities for Graphing
-            const cAreal = isNaN(data.cathodeArealCap) ? 0 : data.cathodeArealCap;
-            const aAreal = isNaN(data.anodeArealCap) ? 0 : data.anodeArealCap;
+            // Retrieve stored Areal values
+            const cAreal = isNaN(data.cathodeNominalCap) ? 0 : data.cathodeNominalCap;
+            const aAreal = isNaN(data.anodeNominalCap) ? 0 : data.anodeNominalCap;
 
             // Check what data we have (based on areal values now)
             const hasCathode = cAreal > 0;
@@ -1073,24 +1076,41 @@
             // Safety for empty
             if (xMax === 0) xMax = 5; // Default scale if 0
 
-            // --- Y-Axis Setup with Break for Full Cell ---
+            // Determine Y scale
             let yMin = 0;
             let yMax = 5.0;
+            if (data.cellType === 'full') {
+                 // FIX: Cut Y-axis at 4.5V for better resolution
+                 yMax = 4.5;
+                 yMin = 0.0; 
+            } else if (data.cellType === 'cathode_half') {
+                 yMin = 2.0;
+                 yMax = 4.8;
+            } else if (data.cellType === 'anode_half') {
+                 yMin = 0.0;
+                 yMax = 2.0;
+            }
+            
+            // Draw Axes
+            ctx.beginPath();
+            ctx.strokeStyle = "#cbd5e1";
+            ctx.lineWidth = 1;
             
             // Helpers for Full Cell split-axis
             // Lower Zone: 0 - 1.5V maps to bottom 25%
-            // Upper Zone: 2.5 - 5.0V maps to top 65%
+            // Upper Zone: 2.5 - 4.5V maps to top 65%
             // Gap: 10%
             const lowerLimit = 1.5;
             const upperStart = 2.5;
-            const upperLimit = 5.0;
+            // FIX: Update upper limit for split axis calculation
+            const upperLimit = 4.5; 
             
             // Map function for broken axis
             const mapY = (val) => {
                 if (data.cellType === 'full') {
                     // Upper section (Cathode/Cell)
                     if (val >= upperStart) {
-                        // Map 2.5-5.0 to 0 - 0.65*H
+                        // Map 2.5-4.5 to 0 - 0.65*H
                         const norm = (val - upperStart) / (upperLimit - upperStart); // 0 to 1
                         const sectionH = chartH * 0.65;
                         // Top of chartH is y=0 relative to plot area
@@ -1114,16 +1134,6 @@
                 }
             };
 
-            if (data.cellType === 'full') {
-                 // Logic handled in mapY
-            } else if (data.cellType === 'cathode_half') {
-                 yMin = 2.0;
-                 yMax = 4.8;
-            } else if (data.cellType === 'anode_half') {
-                 yMin = 0.0;
-                 yMax = 2.0;
-            }
-            
             // --- Draw Axes & Labels ---
             ctx.beginPath();
             ctx.strokeStyle = "#cbd5e1";
@@ -1149,7 +1159,6 @@
                 ctx.strokeStyle = "#94a3b8";
                 const zigX = padding.left;
                 const zigW = 4;
-                const breakMid = (ySplitTop + ySplitBottom) / 2;
                 // Simple parallel lines for break
                 ctx.moveTo(zigX - zigW, ySplitTop + 2);
                 ctx.lineTo(zigX + zigW, ySplitTop - 2);
@@ -1190,8 +1199,8 @@
             
             ctx.textAlign = "right";
             if (data.cellType === 'full') {
-                // Custom Labels for Split Axis
-                ctx.fillText("5.0 V", padding.left - 10, padding.top + 5);
+                // Custom Labels for Split Axis - FIX: Updated top label to 4.5 V
+                ctx.fillText("4.5 V", padding.left - 10, padding.top + 5);
                 ctx.fillText("2.5 V", padding.left - 10, mapY(2.5) + 5);
                 ctx.fillText("1.5 V", padding.left - 10, mapY(1.5) + 5);
                 ctx.fillText("0.0 V", padding.left - 10, height - padding.bottom);
